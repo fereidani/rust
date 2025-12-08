@@ -2315,7 +2315,7 @@ impl<T, A: Allocator> Vec<T, A> {
 
         impl<T, A: Allocator> Drop for BackshiftOnDrop<'_, T, A> {
             fn drop(&mut self) {
-                if self.write_index < self.read_index {
+                if self.read_index < self.original_len {
                     // SAFETY: Trailing unchecked items must be valid since we never touch them.
                     unsafe {
                         ptr::copy(
@@ -2363,7 +2363,7 @@ impl<T, A: Allocator> Vec<T, A> {
                     }
                 } else {
                     if DELETED {
-                        // SAFETY: `read_index`` > `write_index``, so the slots don't overlap.
+                        // SAFETY: `read_index` > `write_index`, so the slots don't overlap.
                         // We use copy for move, and never touch the source element again.
                         unsafe {
                             let hole_slot = g.v.as_mut_ptr().add(g.write_index);
@@ -2374,11 +2374,6 @@ impl<T, A: Allocator> Vec<T, A> {
                     }
                     g.read_index += 1;
                 }
-            }
-            if !DELETED && g.read_index == original_len {
-                // Finished the first stage without finding any deleted element.
-                // Set write_index to read_index for the drop stage.
-                g.write_index = g.read_index;
             }
         }
 
