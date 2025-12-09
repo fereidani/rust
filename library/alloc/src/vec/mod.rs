@@ -2316,23 +2316,23 @@ impl<T, A: Allocator> Vec<T, A> {
         impl<T, A: Allocator> Drop for BackshiftOnDrop<'_, T, A> {
             fn drop(&mut self) {
                 if self.read_index < self.original_len {
-                    if self.write_index < self.read_index {
-                        // SAFETY: Trailing unchecked items must be valid since we never touch them.
-                        unsafe {
-                            ptr::copy(
-                                self.v.as_ptr().add(self.read_index),
-                                self.v.as_mut_ptr().add(self.write_index),
-                                self.original_len - self.read_index,
-                            );
-                        }
+                    self.write_index = self.write_index.min(self.read_index);
+                    let remaining = self.original_len - self.read_index;
+                    // SAFETY: Trailing unchecked items must be valid since we never touch them.
+                    unsafe {
+                        ptr::copy(
+                            self.v.as_ptr().add(self.read_index),
+                            self.v.as_mut_ptr().add(self.write_index),
+                            remaining,
+                        );
                     }
                     // SAFETY: After filling holes, all items are in contiguous memory.
                     unsafe {
-                        self.v.set_len(self.original_len - (self.read_index - self.write_index));
+                        self.v.set_len(self.write_index + remaining);
                     }
                     return;
                 }
-                // SAFETY: After filling holes, all items are in contiguous memory.
+                // SAFETY: no panic happened, so all items are in contiguous memory.
                 unsafe {
                     self.v.set_len(self.write_index.min(self.read_index));
                 }
