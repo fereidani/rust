@@ -2315,24 +2315,32 @@ impl<T, A: Allocator> Vec<T, A> {
 
         impl<T, A: Allocator> Drop for BackshiftOnDrop<'_, T, A> {
             fn drop(&mut self) {
-                if self.write_index < self.read_index {
-                    // SAFETY: Trailing unchecked items must be valid since we never touch them.
-                    unsafe {
-                        ptr::copy(
-                            self.v.as_ptr().add(self.read_index),
-                            self.v.as_mut_ptr().add(self.write_index),
-                            self.original_len - self.read_index,
-                        );
+                if self.read_index < self.original_len {
+                    if self.write_index < self.read_index {
+                        // SAFETY: Trailing unchecked items must be valid since we never touch them.
+                        unsafe {
+                            ptr::copy(
+                                self.v.as_ptr().add(self.read_index),
+                                self.v.as_mut_ptr().add(self.write_index),
+                                self.original_len - self.read_index,
+                            );
+                        }
                     }
+                    // SAFETY: After filling holes, all items are in contiguous memory.
+                    unsafe {
+                        self.v.set_len(self.original_len - (self.read_index - self.write_index));
+                    }
+                    return;
                 }
                 // SAFETY: After filling holes, all items are in contiguous memory.
                 unsafe {
-                    self.v.set_len(self.original_len - (self.read_index - self.write_index));
+                    self.v.set_len(self.write_index.min(self.read_index));
                 }
             }
         }
 
-        let mut g = BackshiftOnDrop { v: self, read_index: 0, write_index: 0, original_len };
+        let mut g =
+            BackshiftOnDrop { v: self, read_index: 0, write_index: usize::MAX, original_len };
 
         fn process_loop<F, T, A: Allocator, const DELETED: bool>(
             original_len: usize,
@@ -2345,12 +2353,15 @@ impl<T, A: Allocator> Vec<T, A> {
                 // SAFETY: Unchecked element must be valid.
                 let cur = unsafe { &mut *g.v.as_mut_ptr().add(g.read_index) };
                 if !f(cur) {
+                    if !DELETED {
+                        // We set g.write_index only once when we found the first deleted element.
+                        g.write_index = g.read_index;
+                    }
                     // Advance read_index early to avoid double drop if `drop_in_place` panicked.
                     g.read_index += 1;
                     // SAFETY: We never touch this element again after dropped.
                     unsafe { ptr::drop_in_place(cur) };
                     // We already advanced the counter.
-
                     if !DELETED {
                         // We found the first deleted element.
                         // Switch to the second stage.
@@ -2365,8 +2376,8 @@ impl<T, A: Allocator> Vec<T, A> {
                             let hole_slot = g.v.as_mut_ptr().add(g.write_index);
                             ptr::copy_nonoverlapping(cur, hole_slot, 1);
                         }
+                        g.write_index += 1;
                     }
-                    g.write_index += 1;
                     g.read_index += 1;
                 }
             }
