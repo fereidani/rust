@@ -73,14 +73,16 @@ impl<BorrowType: marker::BorrowType, K, V> LeafRange<BorrowType, K, V> {
         F: Fn(&Handle<NodeRef<BorrowType, K, V, marker::LeafOrInternal>, marker::KV>) -> R,
     {
         if self.is_empty() {
-            None
-        } else {
-            super::mem::replace(self.front.as_mut().unwrap(), |front| {
-                let kv = front.next_kv().ok().unwrap();
-                let result = f(&kv);
-                (kv.next_leaf_edge(), Some(result))
-            })
+            return None;
         }
+        // SAFETY: not empty so `front` and `back` are guaranteed to be `Some`
+        let front_mut = unsafe { self.front.as_mut().unwrap_unchecked() };
+        super::mem::replace(front_mut, |front| {
+            // SAFETY: not empty so `front` and `back` are guaranteed to be `Ok`
+            let kv = unsafe { front.next_kv().unwrap_unchecked() };
+            let result = f(&kv);
+            (kv.next_leaf_edge(), Some(result))
+        })
     }
 
     /// If possible, extract some result from the preceding KV and move to the edge beyond it.
