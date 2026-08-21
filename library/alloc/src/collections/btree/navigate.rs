@@ -548,7 +548,8 @@ impl<'a, K, V> Handle<NodeRef<marker::Immut<'a>, K, V, marker::Leaf>, marker::Ed
     /// There must be another KV in the direction travelled.
     unsafe fn next_back_unchecked(&mut self) -> (&'a K, &'a V) {
         super::mem::replace(self, |leaf_edge| {
-            let kv = leaf_edge.next_back_kv().ok().unwrap();
+            // SAFETY: caller guaranteed based on safety convention of the function
+            let kv = unsafe { leaf_edge.next_back_kv().unwrap_unchecked() };
             (kv.next_back_leaf_edge(), kv.into_kv())
         })
     }
@@ -577,7 +578,8 @@ impl<'a, K, V> Handle<NodeRef<marker::ValMut<'a>, K, V, marker::Leaf>, marker::E
     /// There must be another KV in the direction travelled.
     unsafe fn next_back_unchecked(&mut self) -> (&'a K, &'a mut V) {
         let kv = super::mem::replace(self, |leaf_edge| {
-            let kv = leaf_edge.next_back_kv().ok().unwrap();
+            // SAFETY: caller guaranteed based on safety convention of the function
+            let kv = unsafe { leaf_edge.next_back_kv().unwrap_unchecked() };
             (unsafe { ptr::read(&kv) }.next_back_leaf_edge(), kv)
         });
         // Doing this last is faster, according to benchmarks.
